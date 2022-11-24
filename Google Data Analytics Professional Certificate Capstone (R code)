@@ -1,0 +1,368 @@
+# I have started by loading packages 
+
+install.packages('tidyverse')
+install.packages("janitor") 
+install.packages("lubridate")
+install.packages("devtools")
+install.packages("psych")
+install.packages("hunspell")
+install.packages('https://cran.r-project.org/src/contrib/Archive/hrbrthemes/hrbrthemes_0.1.0.tar.gz', type='source', repos=NULL)
+library(tidyverse)
+library(lubridate)
+library(janitor)
+library(data.table)
+library(readr)
+library(psych)
+library(hrbrthemes)
+library(ggplot2)
+
+#The second step is to uploading datasets into new variables
+
+january_2022 <- read.csv("C:\\Users\\Mary\\Desktop\\Case study\\202201-divvy-tripdata.csv")
+february_2022 <- read.csv("C:\\Users\\Mary\\Desktop\\Case study\\202202-divvy-tripdata.csv")
+march_2022 <- read.csv("C:\\Users\\Mary\\Desktop\\Case study\\202203-divvy-tripdata.csv")
+april_2022 <- read.csv("C:\\Users\\Mary\\Desktop\\Case study\\202204-divvy-tripdata.csv")
+may_2022 <- read.csv("C:\\Users\\Mary\\Desktop\\Case study\\202205-divvy-tripdata.csv")
+june_2022 <- read.csv("C:\\Users\\Mary\\Desktop\\Case study\\202206-divvy-tripdata.csv")
+july_2022 <- read.csv("C:\\Users\\Mary\\Desktop\\Case study\\202207-divvy-tripdata.csv")
+august_2022 <- read.csv("C:\\Users\\Mary\\Desktop\\Case study\\202208-divvy-tripdata.csv")
+september_2022 <- read.csv("C:\\Users\\Mary\\Desktop\\Case study\\202209-divvy-tripdata.csv")
+october_2022 <- read.csv("C:\\Users\\Mary\\Desktop\\Case study\\202210-divvy-tripdata.csv")
+
+#Starting with Data Validation. Before merging all datasets into one, all column names should be checked that they are the same
+
+colnames(january_2022)
+colnames(february_2022)
+colnames(march_2022)
+colnames(april_2022)
+colnames(may_2022)
+colnames(june_2022)
+colnames(july_2022)
+colnames(august_2022)
+colnames(september_2022)
+colnames(october_2022)
+
+#Now they can be joined in one dataset which is the total of year 2022
+
+tripdata_2022 <- rbind(january_2022, february_2022,march_2022,april_2022,may_2022,
+                       june_2022,july_2022, august_2022,september_2022,october_2022)
+
+
+summary(tripdata_2022)
+names(tripdata_2022)
+
+
+#Data Cleaning
+
+colSums(is.na(tripdata_2022))
+tripdata_2022_clean <- tripdata_2022[complete.cases(tripdata_2022), ]
+# Rows in which started_at time is greater than or equal to ended_at will be removed from dataset
+tripdata_2022_clean <- tripdata_2022_clean %>% 
+  filter(started_at < ended_at)
+#Removing duplicates
+tripdata_2022_clean <- distinct(tripdata_2022_clean)
+#Changing name of some columns
+tripdata_2022_clean <- rename(tripdata_2022_clean, customer_type=member_casual,type_of_bike=rideable_type)
+#Removing Null, missing values
+
+tripdata_2022_clean <- tripdata_2022_clean %>%
+  drop_na() %>%
+  remove_missing()
+tripdata_2022_clean <- tripdata_2022_clean[complete.cases(tripdata_2022_clean), ]
+
+#Removing raws where start_station_name is missing
+
+tripdata_2022_clean <- subset(tripdata_2022_clean, start_station_name != "")
+
+#Selecting columns which will be used for visualization
+
+tripdata_2022_clean <- select(tripdata_2022_clean, type_of_bike, started_at, ended_at, customer_type)
+
+#Adding date, weekday, month, time columns
+
+tripdata_2022_clean$date <- as.Date(tripdata_2022_clean$started_at)
+tripdata_2022_clean$weekday <- wday(tripdata_2022_clean$started_at, label=TRUE, abbr=FALSE)
+tripdata_2022_clean$month <- months(as.Date(tripdata_2022_clean$started_at))
+
+
+tripdata_2022_clean$started_at <- as.POSIXct(tripdata_2022_clean$started_at, tz = 'UTC')
+tripdata_2022_clean$time <- format(tripdata_2022_clean$started_at, format = "%H:%M:%S")
+
+#Finding duration of trip
+
+tripdata_2022_clean$ended_at <- as.POSIXct(tripdata_2022_clean$ended_at, tz = 'UTC')
+tripdata_2022_clean$started_at <- as.POSIXct(tripdata_2022_clean$started_at, tz = 'UTC')
+tripdata_2022_clean$ride_length <- difftime(tripdata_2022_clean$ended_at,tripdata_2022_clean$started_at, units="mins")
+#Removing raws where trip duration is less than 1 or more than 1440
+tripdata_2022_clean <- tripdata_2022_clean[!tripdata_2022_clean$ride_length>1440,] 
+tripdata_2022_clean <- tripdata_2022_clean[!tripdata_2022_clean$ride_length<1,]
+write.csv(tripdata_2022_clean,file = "tripdata_2022_clean.csv",row.names = FALSE)
+
+#Summarizing the data
+
+view(
+  tripdata_2022_clean %>% 
+    group_by(customer_type, month) %>% 
+    summarize(number_of_rides = n(),
+              average_duration = mean(ride_length),
+              median_duration = median(ride_length),
+              max_duration = max(ride_length),
+              min_duration = min(ride_length)) 
+)
+
+#From below code it has been found that members never use docked bike
+view(setNames(aggregate(ride_length~customer_type+type_of_bike,tripdata_2022_clean,sum),
+              c("customer_type","type_of_bike", "total_ride_length")))
+
+#Ordering dataset for Weekday starting from Monday
+tripdata_2022_clean$weekday <- factor(tripdata_2022_clean$weekday, levels= c("Monday", 
+                                         "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday","Sunday"))
+
+tripdata_2022_clean <- (tripdata_2022_clean[order(tripdata_2022_clean$weekday), ])
+
+view(aggregate(ride_length ~ customer_type+month, tripdata_2022_clean, mean))
+
+
+#Ordering dataset for motnhs
+tripdata_2022_clean$month <- factor(tripdata_2022_clean$month, levels= c("January", "February", "March", "April", "May", "June","July", "August", "September", "October"))
+
+tripdata_2022_clean <- (tripdata_2022_clean[order(tripdata_2022_clean$month), ])
+
+
+
+#Visualization of Ride count per weekday
+
+tripdata_2022_clean %>%    
+  
+  group_by(customer_type, weekday) %>% 
+  
+  summarise(number_of_rides = n() ) %>% 
+  
+  ggplot(aes(weekday, number_of_rides, fill = customer_type)) + 
+  
+  geom_col(position = "dodge") + 
+  
+  facet_wrap(~customer_type)+
+  
+  labs(x="Weekdays", y = "Ride Count", title = "Rides per Weekday", 
+       fill = 'Type_of_Membership', caption = "Author: Maryam Seyidli", tag = "GoogleCapstone: Cyclistic bike-share case study") +
+  
+  scale_y_continuous(breaks = c(50000, 100000, 150000, 200000, 250000, 300000, 350000, 400000), 
+                     labels = c("50k", "100k", "150k", "200k", "250k", "300k", "350k", "400k"))+ 
+  
+  theme(
+    
+    axis.title.x = element_text(size = 16, color = "navy", face = "bold"),
+    
+    axis.title.y = element_text(size = 16, color = "navy", face = "bold"),
+    
+    axis.text.x= element_text(face = "bold", color = "black", size=11, angle = 90, vjust=0.5, hjust=1),
+    
+    axis.text.y = element_text( face = "bold", color = "black", size = 11),
+ 
+    legend.title=element_text(face="bold",size=14, colour="navy"),
+    
+    legend.text=element_text(face = "bold", size = 12),
+   
+    plot.title= element_text(size = 18, color = "navy", face = "bold"),
+        
+    plot.caption= element_text(size = 12, colour = "navy"),
+        
+    plot.tag = element_text(size = 12, colour = "navy", face = "bold"))
+  
+
+
+
+#Visualization 2
+
+tripdata_2022_clean$time <- as.POSIXct(tripdata_2022_clean$time, format = "%H:%M") 
+
+tripdata_2022_clean %>%
+  group_by(customer_type, time) %>%
+  summarize(total_number_of_rides=n()) %>%
+  ggplot(aes(x=time, y=total_number_of_rides, color=customer_type, group=customer_type))+
+  geom_smooth(alpha = 0.5, size = 0.3)+
+
+  labs(x="Time", y = "Total number of rides", title = "Bike usage throught the day",
+         fill="Type of membership",caption = "Author: Maryam Seyidli", tag = "GoogleCapstone: Cyclistic bike-share case study")+ 
+  scale_x_datetime(date_breaks = "1 hour", date_labels = "%H:%M", expand = c(0,0)) +
+  scale_y_continuous(breaks = c(500, 1000, 1500, 2000, 2500, 3000, 3500, 4000))+
+  theme(
+   plot.title=element_text(size=16, color="navy"),
+   axis.text.x=element_text(angle=90, hjust=1, vjust=0.5, face="bold", color="black"),
+   plot.tag=element_text(size=14, color="navy"),
+   axis.title.y=element_text(size=12, face="bold", color="navy"),
+   axis.title.x=element_text(size=12, face="bold", color="navy"),
+   legend.title=element_text(size=14, face="bold", color="navy"),
+   axis.text.y=element_text(face="bold", color="black")
+  )
+
+
+#Visualization 3
+
+
+ tripdata_2022_clean %>%
+   group_by(customer_type, month) %>%
+   summarize(total_number_of_rides=n()) %>%
+   ggplot(aes(x=month, y=total_number_of_rides, color=customer_type, fill=customer_type))+
+   labs(x="Months", y="Total number of rides", title="Usage per month", caption="Author: Maryam Seyidli",
+   tag="GoogleCapstone: Cyclistic bike-share case study")+
+   geom_col(position="dodge")+
+ scale_y_continuous(breaks=c(50000, 100000, 150000, 200000, 250000, 300000, 350000),
+                    labels=(c("50k", "100k", "150k", "200k", "250k", "300k", "350k")))+
+   
+   
+   theme(
+     
+     axis.title.x = element_text(size = 16, color = "navy", face = "bold"),
+     
+     axis.title.y = element_text(size = 16, color = "navy", face = "bold"),
+     
+     axis.text.x= element_text(face = "bold", color = "black", size=11, angle = 90, vjust=0.5, hjust=1),
+     
+     axis.text.y = element_text( face = "bold", color = "black", size = 11),
+     
+     legend.title=element_text(face="bold",size=14, color="navy"),
+     
+     legend.text=element_text(face = "bold", size = 12),
+     
+     plot.title= element_text(size = 18, color = "navy", face = "bold"),
+     
+     plot.caption= element_text(size = 12, color = "navy"),
+     
+     plot.tag = element_text(size = 12, color = "navy", face = "bold"))
+   
+ 
+ 
+ #Visualization 4
+ 
+ tripdata_2022_clean %>%
+   group_by(weekday, customer_type) %>%
+   summarize(Avg_ride_length=mean(ride_length)) %>%
+   ggplot(aes(x=weekday, y=Avg_ride_length, color=customer_type, fill=customer_type)) +
+   labs(x="Weekdays", y="Average ride length", title="Usage per month", caption="Author: Maryam Seyidli",
+        tag="GoogleCapstone: Cyclistic bike-share case study")+
+   geom_col(position="dodge")+
+   geom_text(aes(label = signif(Avg_ride_length)), nudge_y=1)+
+    scale_y_continuous(breaks = c(5,10,15,20,25,30))+
+   theme(
+     
+     axis.title.x = element_text(size = 16, color = "darkgreen", face = "bold"),
+     
+     axis.title.y = element_text(size = 16, color = "darkgreen", face = "bold"),
+     
+     axis.text.x= element_text(face = "bold", color = "black", size=11, angle = 90, vjust=0.5, hjust=1),
+     
+     axis.text.y = element_text( face = "bold", color = "black", size = 11),
+     
+     legend.title=element_text(face="bold",size=14, color="darkgreen"),
+     
+     legend.text=element_text(face = "bold", size = 12),
+     
+     plot.title= element_text(size = 18, color = "darkgreen", face = "bold"),
+     
+     plot.caption= element_text(size = 12, color = "darkgreen"),
+     
+     plot.tag = element_text(size = 12, color = "darkgreen", face = "bold")
+   )
+
+#Visualization 5
+ tripdata_2022_clean %>%
+   group_by(type_of_bike, customer_type) %>%
+   summarize(number_of_riders=n()) %>%
+   ggplot(aes(x=type_of_bike, y=number_of_riders/4309363*100, color=customer_type, fill=customer_type)) +
+   facet_wrap(~customer_type)+
+   geom_col(position="dodge")+
+   geom_text(aes(label=signif(number_of_riders/4309363*100)), nudge_y=1)+
+   labs(x="Bike type", y="Percent of customers", title="Percent of customers for each bike type", caption="Author: Maryam Seyidli",
+        tag="GoogleCapstone: Cyclistic bike-share case study")+
+   theme(
+     
+     axis.title.x = element_text(size = 16, color = "darkgreen", face = "bold"),
+     
+     axis.title.y = element_text(size = 16, color = "darkgreen", face = "bold"),
+     
+     axis.text.x= element_text(face = "bold", color = "black", size=11, angle = 90, vjust=0.5, hjust=1),
+     
+     axis.text.y = element_text( face = "bold", color = "black", size = 11),
+     
+     legend.title=element_text(face="bold",size=14, color="darkgreen"),
+     
+     legend.text=element_text(face = "bold", size = 12),
+     
+     plot.title= element_text(size = 18, color = "darkgreen", face = "bold"),
+     
+     plot.caption= element_text(size = 12, color = "darkgreen"),
+     
+     plot.tag = element_text(size = 12, color = "darkgreen", face = "bold")
+   )
+
+ 
+#Visualization 6
+
+
+ tripdata_2022_clean %>%
+
+   ggplot()+
+   geom_bar(aes(weekday, fill=type_of_bike))+
+
+   facet_wrap(~customer_type)+
+   scale_y_continuous(breaks = c(50000, 100000, 150000, 200000, 250000, 300000, 350000, 400000), 
+                      labels = c("50k", "100k", "150k", "200k", "250k", "300k", "350k", "400k"))+
+ labs(x="Weekday", y="Bike usage", title="Bike usage per weekday", fill="Type of bike", caption="Author: Maryam Seyidli",
+      tag="GoogleCapstone: Cyclistic bike-share case study")+
+   theme(
+     
+     axis.title.x = element_text(size = 16, color = "darkgreen", face = "bold"),
+     
+     axis.title.y = element_text(size = 16, color = "darkgreen", face = "bold"),
+     
+     axis.text.x= element_text(face = "bold", color = "black", size=11, angle = 90, vjust=0.5, hjust=1),
+     
+     axis.text.y = element_text( face = "bold", color = "black", size = 11),
+     
+     legend.title=element_text(face="bold",size=14, color="darkgreen"),
+     
+     legend.text=element_text(face = "bold", size = 12),
+     
+     plot.title= element_text(size = 18, color = "darkgreen", face = "bold"),
+     
+     plot.caption= element_text(size = 12, color = "darkgreen"),
+     
+     plot.tag = element_text(size = 12, color = "darkgreen", face = "bold")
+   )
+
+ 
+ 
+ #Visualization 7
+ tripdata_2022_clean %>%
+   
+   ggplot()+
+   geom_bar(aes(month, fill=type_of_bike))+
+   
+   facet_wrap(~customer_type)+
+   scale_y_continuous(breaks = c(50000, 100000, 150000, 200000, 250000, 300000, 350000, 400000), 
+                      labels = c("50k", "100k", "150k", "200k", "250k", "300k", "350k", "400k"))+
+   labs(x="Month", y="Bike usage", title="Bike usage per weekday", fill="Type of bike", caption="Author: Maryam Seyidli",
+        tag="GoogleCapstone: Cyclistic bike-share case study")+
+   theme(
+     
+     axis.title.x = element_text(size = 16, color = "darkgreen", face = "bold"),
+     
+     axis.title.y = element_text(size = 16, color = "darkgreen", face = "bold"),
+     
+     axis.text.x= element_text(face = "bold", color = "black", size=11, angle = 90, vjust=0.5, hjust=1),
+     
+     axis.text.y = element_text( face = "bold", color = "black", size = 11),
+     
+     legend.title=element_text(face="bold",size=14, color="darkgreen"),
+     
+     legend.text=element_text(face = "bold", size = 12),
+     
+     plot.title= element_text(size = 18, color = "darkgreen", face = "bold"),
+     
+     plot.caption= element_text(size = 12, color = "darkgreen"),
+     
+     plot.tag = element_text(size = 12, color = "darkgreen", face = "bold")
+   )
+
